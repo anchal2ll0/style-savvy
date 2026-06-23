@@ -10,7 +10,7 @@ import { Sparkles, Upload, Heart, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/stylist")({
   head: () => ({ meta: [{ title: "AI Stylist — Atelier" }] }),
-  component: Stylist;
+  component: Stylist,
 });
 
 const OCCASIONS = ["Office", "Party", "College", "Wedding", "Travel", "Casual", "Festival", "Date"] as const;

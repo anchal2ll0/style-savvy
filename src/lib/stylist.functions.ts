@@ -139,10 +139,7 @@ Use ONLY item ids that appear above. Score each outfit 1-100.`;
     // Bump use counts for referenced items
     const usedIds = Array.from(new Set(experimental_output.outfits.flatMap((o) => o.item_ids)));
     if (usedIds.length) {
-      for (const id of usedIds) {
-        await supabase.rpc("noop").catch(() => {});
-      }
-      // Use a single update — increment via select+update loop (small list)
+      // Increment use_count for each referenced item
       const { data: existing } = await supabase
         .from("wardrobe_items")
         .select("id,use_count")

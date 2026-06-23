@@ -2,9 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
-import { generateOutfitRecommendations } from "@/lib/stylist.functions";
-import { fileToDataUrl, getSignedUrl } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
+import { recommendOutfits } from "@/lib/grok.functions";
+import { listWardrobe, recordRecommendation, bumpUseCounts, saveOutfit, type OutfitRec } from "@/lib/firestore";
+import { fileToDataUrl, getImageUrl } from "@/lib/storage";
 import { toast } from "sonner";
 import { Sparkles, Upload, Heart, ArrowRight } from "lucide-react";
 
@@ -17,42 +18,36 @@ const OCCASIONS = ["Office", "Party", "College", "Wedding", "Travel", "Casual", 
 const MOODS = ["Confident", "Playful", "Minimal", "Bold", "Cozy", "Romantic"] as const;
 const WEATHER = ["Cool", "Mild", "Warm", "Hot", "Rainy"] as const;
 
-type Outfit = {
-  title: string;
-  item_ids: string[];
-  reasoning: string;
-  score: number;
-  styling_tips: string;
-};
-type Result = {
-  id: string;
-  analysis: string;
-  outfits: Outfit[];
-  missing_pieces: { piece: string; why: string }[];
-};
+type Outfit = OutfitRec["outfits"][number];
 
 function Stylist() {
-  const generate = useServerFn(generateOutfitRecommendations);
+  const { user } = useAuth();
+  const uid = user!.uid;
+  const generate = useServerFn(recommendOutfits);
   const fileRef = useRef<HTMLInputElement>(null);
   const [occasion, setOccasion] = useState<string>("Office");
   const [mood, setMood] = useState<string>("Confident");
   const [weather, setWeather] = useState<string>("Mild");
   const [photo, setPhoto] = useState<File | null>(null);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = useState<OutfitRec | null>(null);
 
   const { data: items = [] } = useQuery({
-    queryKey: ["wardrobe", "lite"],
-    queryFn: async () => {
-      const { data } = await supabase.from("wardrobe_items").select("id,name,category,image_path");
-      return data ?? [];
-    },
+    queryKey: ["wardrobe", uid],
+    queryFn: () => listWardrobe(uid),
   });
   const itemMap = new Map(items.map((i) => [i.id, i]));
 
   const run = useMutation({
     mutationFn: async () => {
       const currentImageDataUrl = photo ? await fileToDataUrl(photo) : undefined;
-      return (await generate({ data: { occasion, mood, weather, currentImageDataUrl } })) as Result;
+      const wardrobe = items.map((i) => ({
+        id: i.id, name: i.name, category: i.category, color: i.color, description: i.description,
+      }));
+      const r = await generate({ data: { occasion, mood, weather, currentImageDataUrl, wardrobe } });
+      await recordRecommendation(uid, { occasion, mood, weather, result: r });
+      const used = Array.from(new Set(r.outfits.flatMap((o) => o.item_ids)));
+      if (used.length) await bumpUseCounts(used);
+      return r;
     },
     onSuccess: (r) => { setResult(r); toast.success("Your outfits are ready"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Something went wrong"),
@@ -61,42 +56,36 @@ function Stylist() {
   return (
     <div className="space-y-10">
       <header>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">Agentic stylist</p>
-        <h1 className="mt-2 font-display text-5xl">What's the occasion?</h1>
-        <p className="mt-2 max-w-xl text-muted-foreground">
-          Set the scene. Optionally add a current photo so the AI can read your fit and colour.
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">Agentic AI</p>
+        <h1 className="mt-2 font-display text-5xl">The stylist</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">
+          Five agents collaborate: wardrobe, image, styling, trend, and shopping. Tell them about your day.
         </p>
       </header>
 
-      <section className="rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-soft)] md:p-8">
-        <Group label="Occasion" options={OCCASIONS} value={occasion} onChange={setOccasion} />
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
+      <section className="rounded-3xl border border-border bg-card p-6 md:p-8 shadow-[var(--shadow-soft)]">
+        <div className="grid gap-6">
+          <Group label="Occasion" options={OCCASIONS} value={occasion} onChange={setOccasion} />
           <Group label="Mood" options={MOODS} value={mood} onChange={setMood} />
           <Group label="Weather" options={WEATHER} value={weather} onChange={setWeather} />
-        </div>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-[1fr_auto]">
           <div>
-            <p className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Current photo (optional)</p>
-            <div className="flex items-center gap-4">
+            <p className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Your photo (optional)</p>
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => fileRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                className="inline-flex items-center gap-2 rounded-full border border-input bg-background px-4 py-2 text-sm hover:bg-accent"
               >
                 <Upload className="h-4 w-4" /> {photo ? "Change photo" : "Upload photo"}
               </button>
-              {photo && (
-                <span className="text-sm text-muted-foreground truncate">{photo.name}</span>
-              )}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-              />
+              {photo && <span className="text-sm text-muted-foreground truncate max-w-xs">{photo.name}</span>}
+              <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
             </div>
           </div>
+        </div>
+
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">{items.length} item{items.length === 1 ? "" : "s"} in your wardrobe</p>
           <button
             onClick={() => run.mutate()}
             disabled={run.isPending || items.length < 2}
@@ -127,10 +116,10 @@ function Stylist() {
             {result.outfits.map((outfit, idx) => (
               <OutfitCard
                 key={idx}
+                uid={uid}
                 outfit={outfit}
                 rank={idx + 1}
                 occasion={occasion}
-                recommendationId={result.id}
                 itemMap={itemMap}
               />
             ))}
@@ -181,9 +170,9 @@ function Group({ label, options, value, onChange }: { label: string; options: re
 }
 
 function OutfitCard({
-  outfit, rank, occasion, recommendationId, itemMap,
+  uid, outfit, rank, occasion, itemMap,
 }: {
-  outfit: Outfit; rank: number; occasion: string; recommendationId: string;
+  uid: string; outfit: Outfit; rank: number; occasion: string;
   itemMap: Map<string, { id: string; name: string | null; category: string; image_path: string }>;
 }) {
   const validItems = outfit.item_ids.map((id) => itemMap.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x));
@@ -193,24 +182,18 @@ function OutfitCard({
   async function save() {
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
-      const { error } = await supabase.from("saved_outfits").insert({
-        user_id: user.id,
+      await saveOutfit(uid, {
         title: outfit.title,
-        occasion,
         item_ids: validItems.map((i) => i.id),
         reasoning: outfit.reasoning,
-        notes: outfit.styling_tips,
         score: outfit.score,
+        occasion,
       });
-      if (error) throw error;
       setSaved(true);
       toast.success("Saved to your looks");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
     } finally { setSaving(false); }
-    void recommendationId; // ref for future linking
   }
 
   return (
@@ -221,13 +204,11 @@ function OutfitCard({
       </div>
       <div className="p-5">
         <h3 className="font-display text-2xl leading-tight">{outfit.title}</h3>
-
         <div className="mt-4 grid grid-cols-3 gap-2">
           {validItems.slice(0, 6).map((item) => (
             <ItemThumb key={item.id} path={item.image_path} name={item.name} />
           ))}
         </div>
-
         <div className="mt-5 space-y-3">
           <div>
             <p className="text-xs uppercase tracking-widest text-muted-foreground">Why it works</p>
@@ -238,7 +219,6 @@ function OutfitCard({
             <p className="mt-1 text-sm text-muted-foreground">{outfit.styling_tips}</p>
           </div>
         </div>
-
         <button
           onClick={save}
           disabled={saving || saved}
@@ -254,9 +234,9 @@ function OutfitCard({
 
 function ItemThumb({ path, name }: { path: string; name: string | null }) {
   const { data: url } = useQuery({
-    queryKey: ["signed", "wardrobe", path],
-    queryFn: () => getSignedUrl("wardrobe", path),
-    staleTime: 50 * 60 * 1000,
+    queryKey: ["img", path],
+    queryFn: () => getImageUrl(path),
+    staleTime: 60 * 60 * 1000,
   });
   return (
     <div className="aspect-square overflow-hidden rounded-xl bg-muted">

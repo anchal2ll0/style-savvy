@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { uploadToBucket, fileToDataUrl, getSignedUrl } from "@/lib/storage";
 import { useServerFn } from "@tanstack/react-start";
-import { categorizeWardrobeItem } from "@/lib/stylist.functions";
+import { useAuth } from "@/lib/auth-context";
+import { uploadImage, fileToDataUrl, getImageUrl, deleteImage } from "@/lib/storage";
+import { listWardrobe, addWardrobeItem, deleteWardrobeItem, type WardrobeItem } from "@/lib/firestore";
+import { categorizeItem } from "@/lib/grok.functions";
 import { toast } from "sonner";
 import { Plus, Trash2, Upload } from "lucide-react";
 
@@ -13,36 +14,29 @@ export const Route = createFileRoute("/_authenticated/wardrobe")({
   component: Wardrobe,
 });
 
-const CATEGORIES = ["all", "shirt", "top", "tshirt", "jeans", "trousers", "shorts", "dress", "skirt", "outerwear", "shoes", "accessory", "other"] as const;
+const CATEGORIES = ["all","shirt","top","tshirt","jeans","trousers","shorts","dress","skirt","outerwear","shoes","accessory","other"] as const;
 
 function Wardrobe() {
+  const { user } = useAuth();
+  const uid = user!.uid;
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<(typeof CATEGORIES)[number]>("all");
   const [uploading, setUploading] = useState(false);
-  const categorize = useServerFn(categorizeWardrobeItem);
+  const categorize = useServerFn(categorizeItem);
 
   const { data: items = [] } = useQuery({
-    queryKey: ["wardrobe"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("wardrobe_items")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryKey: ["wardrobe", uid],
+    queryFn: () => listWardrobe(uid),
   });
 
   const del = useMutation({
-    mutationFn: async (id: string) => {
-      const item = items.find((i) => i.id === id);
-      if (item) await supabase.storage.from("wardrobe").remove([item.image_path]);
-      const { error } = await supabase.from("wardrobe_items").delete().eq("id", id);
-      if (error) throw error;
+    mutationFn: async (item: WardrobeItem) => {
+      await deleteImage(item.image_path);
+      await deleteWardrobeItem(item.id);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["wardrobe"] });
+      qc.invalidateQueries({ queryKey: ["wardrobe", uid] });
       toast.success("Removed");
     },
   });
@@ -52,12 +46,10 @@ function Wardrobe() {
     if (!files.length) return;
     setUploading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
       for (const file of files) {
         toast.loading(`Analyzing ${file.name}…`, { id: file.name });
         const [path, dataUrl] = await Promise.all([
-          uploadToBucket("wardrobe", user.id, file),
+          uploadImage("wardrobe", uid, file),
           fileToDataUrl(file),
         ]);
         let meta = { name: file.name.split(".")[0], category: "other", color: null as string | null, description: null as string | null };
@@ -67,15 +59,10 @@ function Wardrobe() {
         } catch (err) {
           console.warn("AI categorize failed", err);
         }
-        const { error } = await supabase.from("wardrobe_items").insert({
-          user_id: user.id,
-          image_path: path,
-          ...meta,
-        });
-        if (error) throw error;
+        await addWardrobeItem(uid, { image_path: path, ...meta });
         toast.success(`Added ${meta.name}`, { id: file.name });
       }
-      qc.invalidateQueries({ queryKey: ["wardrobe"] });
+      qc.invalidateQueries({ queryKey: ["wardrobe", uid] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -136,7 +123,7 @@ function Wardrobe() {
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {filtered.map((item) => (
-            <WardrobeCard key={item.id} item={item} onDelete={() => del.mutate(item.id)} />
+            <WardrobeCard key={item.id} item={item} onDelete={() => del.mutate(item)} />
           ))}
         </div>
       )}
@@ -144,11 +131,11 @@ function Wardrobe() {
   );
 }
 
-function WardrobeCard({ item, onDelete }: { item: { id: string; image_path: string; name: string | null; category: string; color: string | null; use_count: number }; onDelete: () => void }) {
+function WardrobeCard({ item, onDelete }: { item: WardrobeItem; onDelete: () => void }) {
   const { data: url } = useQuery({
-    queryKey: ["signed", "wardrobe", item.image_path],
-    queryFn: () => getSignedUrl("wardrobe", item.image_path),
-    staleTime: 50 * 60 * 1000,
+    queryKey: ["img", item.image_path],
+    queryFn: () => getImageUrl(item.image_path),
+    staleTime: 60 * 60 * 1000,
   });
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border bg-card shadow-[var(--shadow-soft)]">

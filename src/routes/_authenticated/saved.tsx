@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { getSignedUrl } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
+import { listSaved, deleteSaved, listWardrobe } from "@/lib/firestore";
+import { getImageUrl } from "@/lib/storage";
 import { Heart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,37 +12,24 @@ export const Route = createFileRoute("/_authenticated/saved")({
 });
 
 function Saved() {
+  const { user } = useAuth();
+  const uid = user!.uid;
   const qc = useQueryClient();
+
   const { data: outfits = [] } = useQuery({
-    queryKey: ["saved-outfits"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("saved_outfits")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryKey: ["saved-outfits", uid],
+    queryFn: () => listSaved(uid),
   });
 
-  const allIds = Array.from(new Set(outfits.flatMap((o) => o.item_ids)));
   const { data: items = [] } = useQuery({
-    queryKey: ["wardrobe", "for-saved", allIds.join(",")],
-    queryFn: async () => {
-      if (allIds.length === 0) return [];
-      const { data } = await supabase.from("wardrobe_items").select("id,name,image_path").in("id", allIds);
-      return data ?? [];
-    },
-    enabled: allIds.length > 0,
+    queryKey: ["wardrobe", uid],
+    queryFn: () => listWardrobe(uid),
   });
   const itemMap = new Map(items.map((i) => [i.id, i]));
 
   const del = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("saved_outfits").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["saved-outfits"] }); toast.success("Removed"); },
+    mutationFn: (id: string) => deleteSaved(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["saved-outfits", uid] }); toast.success("Removed"); },
   });
 
   return (
@@ -95,9 +83,9 @@ function Saved() {
 
 function Thumb({ path, name }: { path: string; name: string | null }) {
   const { data: url } = useQuery({
-    queryKey: ["signed", "wardrobe", path],
-    queryFn: () => getSignedUrl("wardrobe", path),
-    staleTime: 50 * 60 * 1000,
+    queryKey: ["img", path],
+    queryFn: () => getImageUrl(path),
+    staleTime: 60 * 60 * 1000,
   });
   return (
     <div className="aspect-square overflow-hidden rounded-xl bg-muted">

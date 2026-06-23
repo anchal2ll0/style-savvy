@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { countWardrobe, countDocs } from "@/lib/firestore";
 import { Shirt, Sparkles, Heart, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -9,21 +10,17 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
+  const { user } = useAuth();
+  const uid = user!.uid;
   const { data: stats } = useQuery({
-    queryKey: ["stats"],
+    queryKey: ["stats", uid],
     queryFn: async () => {
-      const [items, recs, saved] = await Promise.all([
-        supabase.from("wardrobe_items").select("id,category", { count: "exact" }),
-        supabase.from("outfit_recommendations").select("id", { count: "exact", head: true }),
-        supabase.from("saved_outfits").select("id", { count: "exact", head: true }),
+      const [wardrobe, recs, saved] = await Promise.all([
+        countWardrobe(uid),
+        countDocs("outfit_recommendations", uid),
+        countDocs("saved_outfits", uid),
       ]);
-      const categories = new Set((items.data ?? []).map((i) => i.category));
-      return {
-        items: items.count ?? 0,
-        categories: categories.size,
-        recs: recs.count ?? 0,
-        saved: saved.count ?? 0,
-      };
+      return { items: wardrobe.items, categories: wardrobe.categories, recs, saved };
     },
   });
 
@@ -45,15 +42,9 @@ function Dashboard() {
       </section>
 
       <section className="grid gap-6 md:grid-cols-3">
-        <Action to="/wardrobe" title="Upload clothes" icon={Shirt} desc="Photograph items so the AI knows what you own.">
-          Add items
-        </Action>
-        <Action to="/stylist" title="Get an outfit" icon={Sparkles} desc="Pick an occasion and (optionally) upload a current photo.">
-          Style me
-        </Action>
-        <Action to="/saved" title="Saved looks" icon={Heart} desc="Your bookmarked outfits, ready to wear again.">
-          View saved
-        </Action>
+        <Action to="/wardrobe" title="Upload clothes" icon={Shirt} desc="Photograph items so the AI knows what you own.">Add items</Action>
+        <Action to="/stylist" title="Get an outfit" icon={Sparkles} desc="Pick an occasion and (optionally) upload a current photo.">Style me</Action>
+        <Action to="/saved" title="Saved looks" icon={Heart} desc="Your bookmarked outfits, ready to wear again.">View saved</Action>
       </section>
     </div>
   );
@@ -68,9 +59,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Action({
-  to, title, desc, icon: Icon, children,
-}: {
+function Action({ to, title, desc, icon: Icon, children }: {
   to: "/wardrobe" | "/stylist" | "/saved";
   title: string; desc: string;
   icon: React.ComponentType<{ className?: string }>;

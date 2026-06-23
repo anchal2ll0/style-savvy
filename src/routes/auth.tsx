@@ -1,6 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  updateProfile,
+} from "firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 
@@ -23,34 +29,29 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/dashboard", replace: true });
+    const unsub = onAuthStateChanged(getFirebaseAuth(), (u) => {
+      if (u) navigate({ to: "/dashboard", replace: true });
     });
+    return unsub;
   }, [navigate]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
+      const auth = getFirebaseAuth();
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { name },
-            emailRedirectTo: window.location.origin + "/dashboard",
-          },
-        });
-        if (error) throw error;
-        toast.success("Welcome to Atelier", { description: "Account created. Signing you in…" });
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (name) await updateProfile(cred.user, { displayName: name });
+        toast.success("Welcome to Atelier");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        await signInWithEmailAndPassword(auth, email, password);
         toast.success("Welcome back");
       }
       navigate({ to: "/dashboard", replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Authentication failed");
+      const msg = err instanceof Error ? err.message : "Authentication failed";
+      toast.error(msg.replace("Firebase: ", ""));
     } finally {
       setLoading(false);
     }
@@ -85,65 +86,29 @@ function AuthPage() {
           <form onSubmit={submit} className="mt-8 space-y-4">
             {mode === "signup" && (
               <Field label="Name">
-                <input
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="input"
-                  placeholder="Aria"
-                />
+                <input required value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="Aria" />
               </Field>
             )}
             <Field label="Email">
-              <input
-                required
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input"
-                placeholder="you@example.com"
-                autoComplete="email"
-              />
+              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" autoComplete="email" />
             </Field>
             <Field label="Password">
-              <input
-                required
-                minLength={6}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input"
-                placeholder="••••••••"
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              />
+              <input required minLength={6} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input" placeholder="••••••••" autoComplete={mode === "signup" ? "new-password" : "current-password"} />
             </Field>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
-            >
-              {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+            <button type="submit" disabled={loading} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60">
+              {loading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" /> : null}
+              {mode === "signin" ? "Sign in" : "Create account"}
             </button>
           </form>
 
-          <button
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            className="mt-6 text-sm text-muted-foreground hover:text-foreground"
-          >
-            {mode === "signin" ? "New to Atelier? Create an account →" : "Already have an account? Sign in →"}
-          </button>
+          <p className="mt-6 text-sm text-muted-foreground">
+            {mode === "signin" ? "New here?" : "Already have an account?"}{" "}
+            <button onClick={() => setMode(mode === "signin" ? "signup" : "signin")} className="font-medium text-primary hover:underline">
+              {mode === "signin" ? "Create an account" : "Sign in"}
+            </button>
+          </p>
         </div>
       </div>
-
-      <style>{`
-        .input {
-          width: 100%; border-radius: 12px; border: 1px solid var(--color-border);
-          background: var(--color-card); padding: 0.75rem 1rem; font-size: 0.9rem;
-          outline: none; transition: box-shadow .15s, border-color .15s;
-        }
-        .input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 20%, transparent); }
-      `}</style>
     </div>
   );
 }
@@ -151,8 +116,8 @@ function AuthPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs uppercase tracking-widest text-muted-foreground">{label}</span>
-      {children}
+      <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{label}</span>
+      <div className="mt-1.5">{children}</div>
     </label>
   );
 }

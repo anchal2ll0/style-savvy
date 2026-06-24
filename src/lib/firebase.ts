@@ -1,7 +1,6 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
@@ -15,7 +14,6 @@ const config = {
 let _app: FirebaseApp | null = null;
 let _auth: Auth | null = null;
 let _db: Firestore | null = null;
-let _storage: FirebaseStorage | null = null;
 
 function ensure(): FirebaseApp {
   if (typeof window === "undefined") {
@@ -34,4 +32,3 @@ function ensure(): FirebaseApp {
 
 export const getFirebaseAuth = () => (_auth ??= getAuth(ensure()));
 export const getDb = () => (_db ??= getFirestore(ensure()));
-export const getFirebaseStorage = () => (_storage ??= getStorage(ensure()));

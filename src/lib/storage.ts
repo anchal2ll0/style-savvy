@@ -1,5 +1,5 @@
 // Image storage on Cloudinary (unsigned uploads).
-// We store the full Cloudinary secure URL in Firestore (as `image_path`)
+// We store the full Cloudinary secure URL in MongoDB (as `image_path`)
 // so reads are just `<img src={url} />` — no signing, no extra API calls.
 
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string;
@@ -43,7 +43,7 @@ export async function getImageUrl(pathOrUrl: string): Promise<string> {
 
 // Deleting from Cloudinary requires a signed (server-side) API call.
 // For the free unsigned flow we leave the asset in Cloudinary; the
-// Firestore record is removed by the caller. No-op here.
+// Mongo record is removed by the caller. No-op here.
 export async function deleteImage(_pathOrUrl: string): Promise<void> {
   return;
 }

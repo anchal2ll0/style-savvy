@@ -1,12 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  onAuthStateChanged,
-  updateProfile,
-} from "firebase/auth";
-import { getFirebaseAuth } from "@/lib/firebase";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 
@@ -17,11 +11,16 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "Sign in or create your Atelier account." },
     ],
   }),
-  component: AuthPage,
+  component: () => (
+    <AuthProvider>
+      <AuthPage />
+    </AuthProvider>
+  ),
 });
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { user, signIn, signUp } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,29 +28,23 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(getFirebaseAuth(), (u) => {
-      if (u) navigate({ to: "/dashboard", replace: true });
-    });
-    return unsub;
-  }, [navigate]);
+    if (user) navigate({ to: "/dashboard", replace: true });
+  }, [user, navigate]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      const auth = getFirebaseAuth();
       if (mode === "signup") {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (name) await updateProfile(cred.user, { displayName: name });
+        await signUp(email, password, name);
         toast.success("Welcome to Atelier");
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signIn(email, password);
         toast.success("Welcome back");
       }
       navigate({ to: "/dashboard", replace: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Authentication failed";
-      toast.error(msg.replace("Firebase: ", ""));
+      toast.error(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setLoading(false);
     }

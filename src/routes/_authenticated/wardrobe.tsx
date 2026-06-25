@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
+
 import { useAuth } from "@/lib/auth-context";
 import { uploadImage, fileToDataUrl, getImageUrl, deleteImage } from "@/lib/storage";
 import { listWardrobe, addWardrobeItem, deleteWardrobeItem, type WardrobeItem } from "@/lib/firestore";
@@ -23,7 +23,7 @@ function Wardrobe() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<(typeof CATEGORIES)[number]>("all");
   const [uploading, setUploading] = useState(false);
-  const categorize = useServerFn(categorizeItem);
+  const categorize = categorizeItem;
 
   const { data: items = [] } = useQuery({
     queryKey: ["wardrobe", uid],

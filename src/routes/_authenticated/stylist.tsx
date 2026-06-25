@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+
 import { useAuth } from "@/lib/auth-context";
 import { recommendOutfits } from "@/lib/grok.functions";
 import { listWardrobe, recordRecommendation, bumpUseCounts, saveOutfit, type OutfitRec } from "@/lib/firestore";
@@ -23,7 +23,7 @@ type Outfit = OutfitRec["outfits"][number];
 function Stylist() {
   const { user } = useAuth();
   const uid = user!.uid;
-  const generate = useServerFn(recommendOutfits);
+  const generate = recommendOutfits;
   const fileRef = useRef<HTMLInputElement>(null);
   const [occasion, setOccasion] = useState<string>("Office");
   const [mood, setMood] = useState<string>("Confident");

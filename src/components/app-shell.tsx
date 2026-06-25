@@ -1,7 +1,6 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { type ReactNode } from "react";
-import { signOut } from "firebase/auth";
-import { getFirebaseAuth } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
 import { Shirt, Sparkles, Heart, LayoutDashboard, LogOut } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -15,11 +14,12 @@ const navItems = [
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
+  const { signOut } = useAuth();
 
   async function handleSignOut() {
     await qc.cancelQueries();
     qc.clear();
-    await signOut(getFirebaseAuth());
+    signOut();
     router.navigate({ to: "/auth", replace: true });
   }
 

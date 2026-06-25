@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 
@@ -11,7 +11,11 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "Sign in or create your Atelier account." },
     ],
   }),
-  component: AuthPage,
+  component: () => (
+    <AuthProvider>
+      <AuthPage />
+    </AuthProvider>
+  ),
 });
 
 function AuthPage() {
